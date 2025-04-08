@@ -1,91 +1,38 @@
-import logging
-from os import getenv
-from huepy import bad
-from pyromod import Client
-from pyrogram import filters
-from pyrogram.enums import ParseMode, ChatMemberStatus
-from pyrogram.types import CallbackQuery, Message
-from utilsdf.functions import bot_on
-from utilsdf.db import Database
-from utilsdf.vars import PREFIXES
-    
-API_ID = '27913375'
-API_HASH = '9e0530595109eb8dbb5091e52f25ddaa'
-BOT_TOKEN = '6528857056:AAHIWMNAvkzgrUR4XEZBcdgtPs1v_sy4NJg'
-CHANNEL_LOGS = '-1002469374244'
+# ai_telegram_bot.py
 
-app = Client(
-    "bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    plugins=dict(root="plugins"),
-    parse_mode=ParseMode.HTML,
-)
+import openai
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-bot_on()
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("httpx").setLevel(logging.CRITICAL)
+# Replace with your actual tokens
+TELEGRAM_TOKEN = "6528857056:AAFPb3NEKX41qnlCfpiPcGd1YFIueJtVTcU"
+OPENAI_API_KEY = "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"
 
+openai.api_key = OPENAI_API_KEY
 
-@app.on_callback_query()
-async def warn_user(client: Client, callback_query: CallbackQuery):
-    if callback_query.message.reply_to_message.from_user and (
-        callback_query.from_user.id
-        != callback_query.message.reply_to_message.from_user.id
-    ):
-        await callback_query.answer("Usa tu menu! ⚠️", show_alert=True)
-        return
-    await callback_query.continue_propagation()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hey! I’m your AI assistant. Ask me anything.")
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
 
-@app.on_message(filters.text)
-async def user_ban(client: Client, m: Message):
-
-    if not m.from_user:
-        return
-    if not m.text:
-        return
     try:
-        if not m.text[0] in PREFIXES:
-            return
-    except UnicodeDecodeError:
-        return
-    chat_id = m.chat.id
-    with Database() as db:
-        if chat_id == -1002469374244:
-            async for member in m.chat.get_members():
-                if not member.user:
-                    continue
-                if member.status == ChatMemberStatus.ADMINISTRATOR:
-                    continue
-                user_id = member.user.id
-                if db.is_seller_or_admin(user_id):
-                    continue
-                is_premium = db.is_premium(user_id)
-                if is_premium:
-                    continue
-                if db.user_has_credits(user_id):
-                    continue
-                await m.chat.ban_member(user_id)
-                info=db.get_info_user(user_id)
-                await client.send_message(-1002469374244, f"<b>User eliminado: @{info['USERNAME']}</b>")
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": user_message}]
+        )
+        reply = response.choices[0].message.content.strip()
+    except Exception as e:
+        reply = f"Error: {e}"
 
-        #         if not db.is_admin(m.from_user.id):
-        #             return await m.reply(
-        #                 """𝘽𝙤𝙩 𝙪𝙣𝙙𝙚𝙧 𝙈𝙖𝙣𝙩𝙚𝙣𝙞𝙚𝙣𝙘𝙚 ⚠️
-        # 𝙍𝙚𝙖𝙨𝙤𝙣 -» <code>Mantenimiento by @punjab_buy</code>
-        #        """
-        #             )
-        user_id = m.from_user.id
-        username = m.from_user.username
-        db.remove_expireds_users()
-        banned = db.is_ban(user_id)
-        if banned:
-            return
-        db.register_user(user_id, username)
-        await m.continue_propagation()
+    await update.message.reply_text(reply)
 
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-if __name__ == "__main__":
-    app.run()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("Bot is running...")
+    app.run_polling()
+    
